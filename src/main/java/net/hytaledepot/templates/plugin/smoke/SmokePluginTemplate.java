@@ -15,15 +15,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 public final class SmokePluginTemplate extends JavaPlugin {
-  // Keeps simple runtime values so command output can show live plugin state.
   private final Map<String, String> runtimeState = new ConcurrentHashMap<>();
-  // Counts heartbeat ticks for diagnostics and smoke testing.
   private final AtomicLong heartbeatTicks = new AtomicLong();
-  // Dedicated scheduler for periodic plugin jobs.
   private final ScheduledExecutorService scheduler =
       Executors.newSingleThreadScheduledExecutor(
           runnable -> {
-            Thread thread = new Thread(runnable, "smoke-template-heartbeat");
+            Thread thread = new Thread(runnable, "hd-smoke-heartbeat");
             thread.setDaemon(true);
             return thread;
           });
@@ -36,44 +33,37 @@ public final class SmokePluginTemplate extends JavaPlugin {
 
   @Override
   public CompletableFuture<Void> preLoad() {
-    getLogger().atInfo().log("[%s] preLoad -> %s", getClass().getSimpleName(), getIdentifier());
+    getLogger().atInfo().log("[SmokeTemplate] preLoad -> %s", getIdentifier());
     return CompletableFuture.completedFuture(null);
   }
 
   @Override
   protected void setup() {
-    // State initialization example using plugin metadata and data directory.
-    runtimeState.put("template", "DevDocsSmoke");
+    runtimeState.put("profile", "smoke-template");
     runtimeState.put("dataDirectory", getDataDirectory().toString());
-
-    runtimeState.put("setupEventSeen", "true");
-
-    // Command example: register one operational status command.
-    getCommandRegistry().registerCommand(new SmokePluginTemplateStatusCommand());
+    runtimeState.put("setupComplete", "true");
+    getCommandRegistry().registerCommand(new SmokeStatusCommand());
   }
 
   @Override
   protected void start() {
-    // Task example: periodic heartbeat with controlled logging cadence.
     heartbeatTask =
         scheduler.scheduleAtFixedRate(
             () -> {
               long tick = heartbeatTicks.incrementAndGet();
               if (tick % 60 == 0) {
-                getLogger().atInfo().log("[DevDocsSmoke] heartbeat=%d", tick);
+                getLogger().atInfo().log("[SmokeTemplate] heartbeat=%d", tick);
               }
             },
             0,
             1,
             TimeUnit.SECONDS);
 
-    // Task registry example: register a startup-complete marker future.
     getTaskRegistry().registerTask(CompletableFuture.completedFuture(null));
   }
 
   @Override
   protected void shutdown() {
-    // Always cancel scheduled work before clearing runtime state.
     if (heartbeatTask != null) {
       heartbeatTask.cancel(true);
     }
@@ -81,33 +71,31 @@ public final class SmokePluginTemplate extends JavaPlugin {
     runtimeState.clear();
   }
 
-  // Build the same payload shape shown in the Dev Docs licensing section.
   public static String buildLicenseValidatePayload(String assetId, String licenseKey, String serverIp) {
     return SmokeLicenseContract.buildLicenseValidatePayload(assetId, licenseKey, serverIp);
   }
 
-  // Lightweight parser used by tests to validate the response contract shape.
   public static boolean isLicenseAllowed(String responseJson) {
     return SmokeLicenseContract.isLicenseAllowed(responseJson);
   }
 
-
-  private final class SmokePluginTemplateStatusCommand extends AbstractCommand {
-    private SmokePluginTemplateStatusCommand() {
-      super("hdsmokestatus", "DevDocsSmoke template status command");
-    setAllowsExtraArguments(true);
+  private final class SmokeStatusCommand extends AbstractCommand {
+    private SmokeStatusCommand() {
+      super("hdsmokestatus", "Shows heartbeat and setup state for the smoke template.");
+      setAllowsExtraArguments(true);
     }
 
     @Override
     protected CompletableFuture<Void> execute(CommandContext ctx) {
-      // Command response example using structured runtime state.
       String output =
-          "[DevDocsSmoke] sender="
-              + ctx.sender().getDisplayName()
+          "[SmokeTemplate] sender="
+              + ctx.sender().getUsername()
               + ", heartbeatTicks="
               + heartbeatTicks.get()
-              + ", setupEventSeen="
-              + runtimeState.getOrDefault("setupEventSeen", "false");
+              + ", setupComplete="
+              + runtimeState.getOrDefault("setupComplete", "false")
+              + ", dataDirectory="
+              + runtimeState.getOrDefault("dataDirectory", "unset");
       ctx.sendMessage(Message.raw(output));
       return CompletableFuture.completedFuture(null);
     }
